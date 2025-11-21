@@ -6,3 +6,6 @@ env/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.pyc
+
+# roberta models (big files)
+models/roberta_classification/
