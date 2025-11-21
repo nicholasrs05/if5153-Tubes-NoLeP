@@ -9,7 +9,16 @@ import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import evaluate
 from tqdm import tqdm
+import gdown
 
+def download_model(model_dir, folder_id):
+    if not os.path.exists(model_dir):
+        print(f"Model not found. Downloading from Google Drive...")
+        os.makedirs(model_dir, exist_ok=True)
+        url = f"https://drive.google.com/drive/folders/{folder_id}"
+        gdown.download_folder(url, output=model_dir, quiet=False, use_cookies=False)
+    else:
+        print(f"Model found locally: {model_dir}")
 
 def read_csv_with_encodings(path, encodings=None):
     if encodings is None:
@@ -29,6 +38,7 @@ def batch_iter(items: List[str], batch_size: int):
 
 def main(args):
     # load data
+    download_model(args.model_dir, folder_id="1GlKw76LOp7KuoGy_t6l-tuNLktFxC9fR")
     df = read_csv_with_encodings(args.data)
     if "Patient_comment" not in df.columns or "Patient_Category" not in df.columns:
         raise ValueError("CSV must contain Patient_comment and Patient_Category columns")
