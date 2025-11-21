@@ -35,6 +35,49 @@ def batch_iter(items: List[str], batch_size: int):
     for i in range(0, len(items), batch_size):
         yield items[i : i + batch_size]
 
+# def run_predictions(model_dir="models/roberta_classification",
+#                     data_path="data/HealthCare Data.csv",
+#                     output_csv="predictions.csv",
+#                     batch_size=32):
+#     class Args:
+#         def __init__(self):
+#             self.model_dir = model_dir
+#             self.data = data_path
+#             self.output_csv = output_csv
+#             self.batch_size = batch_size
+
+#     args = Args()
+#     return main(args)
+
+def classify_single_text(text, model, tokenizer, id2label, device):
+    enc = tokenizer([text], return_tensors="pt", truncation=True, padding=True)
+    enc = {k: v.to(device) for k, v in enc.items()}
+
+    with torch.no_grad():
+        logits = model(**enc).logits
+        pred = torch.argmax(logits, dim=-1).item()
+
+    return id2label.get(pred, "UNKNOWN")
+
+def load_model(model_dir):
+    download_model(model_dir, folder_id="1GlKw76LOp7KuoGy_t6l-tuNLktFxC9fR")
+
+    # Load label mapping
+    label_path = os.path.join(model_dir, "label2id.json")
+    with open(label_path, "r", encoding="utf-8") as f:
+        label2id = json.load(f)
+    id2label = {int(v): k for k, v in label2id.items()}
+
+    # Load model & tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+
+    return model, tokenizer, id2label, device
+
 
 def main(args):
     # load data
