@@ -110,7 +110,7 @@ class RecommendationRAGService:
     def _generate_recommendation(
         self,
         prompt: str,
-        max_new_tokens: int = 100,
+        max_new_tokens: int = 80,
         temperature: float = 0.7,
         top_p: float = 0.9,
     ) -> str:

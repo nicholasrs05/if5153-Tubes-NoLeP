@@ -32,7 +32,7 @@ def generate_recommendation(symptom, cause_or_disease, top_k_guidelines=3, use_r
         symptom=symptom,
         cause_or_disease=cause_or_disease,
         top_k_docs=top_k_guidelines,
-        max_new_tokens=100,
+        max_new_tokens=80,
         use_rag_in_prompt=use_rag_in_prompt,
     )
     return result

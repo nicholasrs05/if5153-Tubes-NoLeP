@@ -21,7 +21,7 @@ def main():
     recommendation_service = RecommendationRAGService(
         rag_index_path="models/recommendation_rag_index.joblib",
         base_model_name="unsloth/Llama-3.2-1B-Instruct",
-        adapter_path="models/llama-recommendation-fine-tuned-150",
+        adapter_path="models/llama-recommendation-fine-tuned",
         device="cpu",
     )
 
@@ -30,7 +30,7 @@ def main():
 
     while True:
         try:
-            user_input = input("Enter patient complaint: ").strip()
+            user_input = input("\n\nEnter patient complaint: ").strip()
 
             if user_input.lower() in ["exit", "quit"]:
                 print("Exiting the program.")
@@ -64,11 +64,6 @@ def main():
             print("Generated cause explanation:")
             print(cause_explanation)
 
-            # (Optional) Kalau mau lihat dokumen RAG yang terambil:
-            # print("\nRetrieved docs:")
-            # for d in cause_result["retrieved_docs"]:
-            #     print(f"- ({d['category']}, sim={d['similarity']:.3f}) {d['cause_text']}")
-
             # -------------------------------------------------
             # 3) RECOMMENDATION GENERATION STEP (RAG-BASED)
             # -------------------------------------------------
@@ -77,19 +72,12 @@ def main():
                 symptom=user_input,
                 cause_or_disease=cause_explanation,
                 top_k_docs=2,
-                max_new_tokens=100,
+                max_new_tokens=80,
             )
 
             recommendation = recommendation_result["recommendation"]
             print("Generated recommendation:")
             print(recommendation)
-
-            # (Optional) Show retrieved treatment guidelines
-            print("\nRetrieved treatment guidelines:")
-            for i, doc in enumerate(recommendation_result["retrieved_guidelines"], 1):
-                print(f"  {i}. {doc['disease']} (similarity: {doc['similarity']:.3f})")
-
-            print("\n" + "-" * 60 + "\n")
 
         except Exception as e:
             print(f"An error occurred: {e}")
