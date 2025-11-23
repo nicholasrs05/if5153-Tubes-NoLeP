@@ -41,18 +41,18 @@ def main():
                 continue
 
             # -------------------------------------------------
-            # 1) CLASSIFICATION STEP
+            # 1) CLASSIFICATION MODEL
             # -------------------------------------------------
-            print("\n[STEP 1] Classification")
+            print("\n[MODEL 1] Classification")
             predicted_label = classify_single_text(
                 user_input, model, tokenizer, id2label, device
             )
             print(f"Predicted label: {predicted_label}")
 
             # -------------------------------------------------
-            # 2) CAUSE GENERATION STEP
+            # 2) CAUSE GENERATION MODEL
             # -------------------------------------------------
-            print("\n[STEP 2] Cause Generation (RAG + Qwen)")
+            print("\n[MODEL 2] Cause Generation (RAG + Qwen)")
             cause_result = cause_generation_service.generate_cause_explanation(
                 complaint_text=user_input,
                 predicted_category=predicted_label,
@@ -65,9 +65,9 @@ def main():
             print(cause_explanation)
 
             # -------------------------------------------------
-            # 3) RECOMMENDATION GENERATION STEP (RAG-BASED)
+            # 3) RECOMMENDATION GENERATION MODEL (RAG-BASED)
             # -------------------------------------------------
-            print("\n[STEP 3] Recommendation Generation (RAG + Fine-tuned Llama)")
+            print("\n[MODEL 3] Recommendation Generation (RAG + Fine-tuned Llama)")
             recommendation_result = recommendation_service.generate_recommendation(
                 symptom=user_input,
                 cause_or_disease=cause_explanation,
