@@ -9,3 +9,4 @@ __pycache__/
 
 # roberta models (big files)
 models/roberta_classification/
+models/llama-recommendation-fine-tuned/
