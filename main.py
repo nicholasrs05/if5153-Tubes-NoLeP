@@ -1,5 +1,6 @@
 from classification.predictions import classify_single_text, load_model
 from cause_textgen.cause_generation_service import CauseRAGService
+from recommendation_generation.recommendation_rag_service import RecommendationRAGService
 
 
 
@@ -16,11 +17,13 @@ def main():
         device="cpu",
     )
 
-    # ---- Placeholder seq2seq (belum dipakai) ----
-    # seq2seq_ready = False
-    # seq2seq_model = None
-    # if seq2seq_ready:
-    #     seq2seq_model = Seq2SeqRecommendationModel(model_path="path/to/your/seq2seq/model")
+    # ---- Load recommendation generation service (RAG-based) ----
+    recommendation_service = RecommendationRAGService(
+        rag_index_path="models/recommendation_rag_index.joblib",
+        base_model_name="unsloth/Llama-3.2-1B-Instruct",
+        adapter_path="models/llama-recommendation-fine-tuned-150",
+        device="cpu",
+    )
 
     print("Models loaded! You can now start the pipeline.")
     print("Type 'exit' or 'quit' to stop.\n")
@@ -67,19 +70,24 @@ def main():
             #     print(f"- ({d['category']}, sim={d['similarity']:.3f}) {d['cause_text']}")
 
             # -------------------------------------------------
-            # 3) SEQ2SEQ RECOMMENDATION STEP (BELUM AKTIF)
+            # 3) RECOMMENDATION GENERATION STEP (RAG-BASED)
             # -------------------------------------------------
-            # print("\n[STEP 3] Recommendation (Seq2Seq)")
-            # if seq2seq_ready and seq2seq_model is not None:
-            #     recommendation = seq2seq_model.generate_recommendation(
-            #         complaint_text=user_input,
-            #         predicted_category=predicted_label,
-            #         cause_explanation=cause_explanation,
-            #     )
-            #     print("Generated recommendation:")
-            #     print(recommendation)
-            # else:
-            #     print("Seq2Seq model not ready yet. This step will be enabled later.")
+            print("\n[STEP 3] Recommendation Generation (RAG + Fine-tuned Llama)")
+            recommendation_result = recommendation_service.generate_recommendation(
+                symptom=user_input,
+                cause_or_disease=cause_explanation,
+                top_k_docs=2,
+                max_new_tokens=100,
+            )
+
+            recommendation = recommendation_result["recommendation"]
+            print("Generated recommendation:")
+            print(recommendation)
+
+            # (Optional) Show retrieved treatment guidelines
+            print("\nRetrieved treatment guidelines:")
+            for i, doc in enumerate(recommendation_result["retrieved_guidelines"], 1):
+                print(f"  {i}. {doc['disease']} (similarity: {doc['similarity']:.3f})")
 
             print("\n" + "-" * 60 + "\n")
 
