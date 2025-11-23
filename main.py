@@ -16,8 +16,7 @@ def main():
         generator_model_name="Qwen/Qwen2.5-1.5B-Instruct",
         device="cpu",
     )
-
-    # ---- Load recommendation generation service (RAG-based) ----
+    
     recommendation_service = RecommendationRAGService(
         rag_index_path="models/recommendation_rag_index.joblib",
         base_model_name="unsloth/Llama-3.2-1B-Instruct",

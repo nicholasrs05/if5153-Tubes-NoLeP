@@ -5,11 +5,32 @@ from typing import List, Dict, Any
 import numpy as np
 import joblib
 import torch
+import os
+import gdown
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
 RAG_INDEX_PATH = "../models/recommendation_rag_index.joblib"
+
+
+def download_lora_adapter(adapter_dir):
+    """
+    Download LoRA adapter from Google Drive if not found locally.
+    
+    Args:
+        adapter_dir: Local directory to save the adapter
+        folder_id: Google Drive folder ID containing the adapter files
+    """
+    if not os.path.exists(adapter_dir):
+        print(f"LoRA adapter not found. Downloading from Google Drive...")
+        os.makedirs(adapter_dir, exist_ok=True)
+        folder_id = "1cRi6jODHjCvI-lpOr2ZVIL7IDAFoHMbK"
+        url = f"https://drive.google.com/drive/folders/{folder_id}"
+        gdown.download_folder(url, output=adapter_dir, quiet=False, use_cookies=False)
+        print(f"✓ LoRA adapter downloaded to: {adapter_dir}")
+    else:
+        print(f"LoRA adapter found locally: {adapter_dir}")
 
 
 @dataclass
@@ -33,6 +54,16 @@ class RecommendationRAGService:
         adapter_path: str = None,
         device: str = None,
     ):
+        """
+        Initialize recommendation service.
+        
+        Args:
+            rag_index_path: Path to RAG index file
+            base_model_name: HuggingFace base model name
+            adapter_path: Local path to LoRA adapter
+            adapter_gdrive_folder_id: Google Drive folder ID for auto-download
+            device: Device to use ("cpu" or "cuda")
+        """
         # ----- Load RAG index -----
         print("Loading RAG index...")
         index = joblib.load(rag_index_path)
@@ -44,6 +75,10 @@ class RecommendationRAGService:
         # ----- Load embedder (same as used to build the index) -----
         print("Loading embedding model...")
         self.embedder = SentenceTransformer(index["embedding_model_name"])
+
+        # ----- Download LoRA adapter if needed -----
+        if adapter_path:
+            download_lora_adapter(adapter_path)
 
         # ----- Load fine-tuned Llama model -----
         print("Loading base model and tokenizer...")
@@ -245,10 +280,14 @@ class RecommendationRAGService:
 # -------------- QUICK TEST --------------
 
 if __name__ == "__main__":
+    # Google Drive folder ID for LoRA adapter (update with your own)
+    GDRIVE_FOLDER_ID = "1sYuN_9rF9YRjI0Cn1e-vRJ01V3aB-xyb"
+    
     service = RecommendationRAGService(
         rag_index_path="../models/recommendation_rag_index.joblib",
         base_model_name="unsloth/Llama-3.2-1B-Instruct",
-        adapter_path=None,  # Set to your LoRA adapter path
+        adapter_path="../models/llama-recommendation-fine-tuned",
+        adapter_gdrive_folder_id=GDRIVE_FOLDER_ID,  # Auto-download if not found
         device="cpu",
     )
 
