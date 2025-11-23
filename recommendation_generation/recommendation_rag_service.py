@@ -1,0 +1,245 @@
+# recommendation_rag_service.py
+
+from dataclasses import dataclass
+from typing import List, Dict, Any
+import numpy as np
+import joblib
+import torch
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import PeftModel
+
+RAG_INDEX_PATH = "../models/recommendation_rag_index.joblib"
+
+
+@dataclass
+class RetrievedTreatmentDoc:
+    disease: str
+    treatment: str
+    similarity: float
+
+
+class RecommendationRAGService:
+    """
+    RAG-based medication recommendation service using:
+    - SentenceTransformers for retrieval from treatment guidelines
+    - Fine-tuned Llama 3.2-1B with LoRA for personalized generation
+    """
+
+    def __init__(
+        self,
+        rag_index_path: str = RAG_INDEX_PATH,
+        base_model_name: str = "unsloth/Llama-3.2-1B-Instruct",
+        adapter_path: str = None,
+        device: str = None,
+    ):
+        # ----- Load RAG index -----
+        print("Loading RAG index...")
+        index = joblib.load(rag_index_path)
+        self.diseases = index["diseases"]
+        self.treatments = index["treatments"]
+        self.combined_texts = index["combined_texts"]
+        self.treatment_embeddings = np.array(index["treatment_embeddings"], dtype=np.float32)
+
+        # ----- Load embedder (same as used to build the index) -----
+        print("Loading embedding model...")
+        self.embedder = SentenceTransformer(index["embedding_model_name"])
+
+        # ----- Load fine-tuned Llama model -----
+        print("Loading base model and tokenizer...")
+        if device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = device
+
+        self.tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Load base model
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.float32 if self.device == "cpu" else torch.float16,
+            device_map=self.device,
+            low_cpu_mem_usage=True
+        )
+
+        # Load LoRA adapter if provided
+        if adapter_path:
+            print(f"Loading LoRA adapter from: {adapter_path}")
+            self.model = PeftModel.from_pretrained(base_model, adapter_path)
+        else:
+            print("No adapter path provided, using base model only")
+            self.model = base_model
+
+        self.model = self.model.to(self.device)
+        self.model.eval()
+        print(f"Model loaded on: {self.device}")
+
+    # ---------------- RETRIEVAL ----------------
+
+    def _retrieve_treatments(
+        self, 
+        query_text: str, 
+        top_k: int = 3
+    ) -> List[RetrievedTreatmentDoc]:
+        """
+        Retrieve most relevant treatment guidelines based on query.
+        """
+        q_emb = self.embedder.encode(
+            [query_text],
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )[0].astype(np.float32)
+
+        # Compute cosine similarities
+        sims = np.dot(self.treatment_embeddings, q_emb)
+        top_idx = np.argsort(sims)[::-1][:top_k]
+
+        return [
+            RetrievedTreatmentDoc(
+                disease=self.diseases[i],
+                treatment=self.treatments[i],
+                similarity=float(sims[i]),
+            )
+            for i in top_idx
+        ]
+
+    # ---------------- GENERATION ----------------
+
+    def _generate_recommendation(
+        self,
+        prompt: str,
+        max_new_tokens: int = 100,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+    ) -> str:
+        """
+        Generate personalized recommendation using fine-tuned Llama model.
+        """
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                do_sample=True,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+
+        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        # Extract only the recommendation part
+        if "### Recommendation:" in response:
+            answer = response.split("### Recommendation:")[-1].strip()
+        else:
+            answer = response.strip()
+
+        return answer
+
+    # ---------------- PUBLIC API ----------------
+
+    def generate_recommendation(
+        self,
+        symptom: str,
+        cause_or_disease: str,
+        top_k_docs: int = 3,
+        max_new_tokens: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Generate personalized medication recommendation using RAG.
+        
+        Args:
+            symptom: Patient's complaint/symptoms
+            cause_or_disease: Generated cause/disease explanation from Model 2
+            top_k_docs: Number of treatment guidelines to retrieve
+            max_new_tokens: Maximum tokens to generate
+            
+        Returns:
+            Dictionary with recommendation and retrieved documents
+        """
+        # Build retrieval query combining symptom and cause
+        retrieval_query = f"Symptoms: {symptom}\nCause/Disease: {cause_or_disease}"
+
+        # Retrieve relevant treatment guidelines
+        retrieved_docs = self._retrieve_treatments(retrieval_query, top_k=top_k_docs)
+
+        # Format retrieved guidelines for context
+        guidelines_context = "\n\n".join(
+            f"{i+1}. Disease: {doc.disease}\n   Treatment: {doc.treatment[:500]}..."  # Truncate long treatments
+            for i, doc in enumerate(retrieved_docs)
+        )
+
+        # Build prompt with RAG context
+        alpaca_prompt = """Based on the patient's symptoms, cause/disease, and the medical treatment guidelines below, provide a personalized recommendation to the patient (2-3 sentences max).
+
+### Symptoms:
+{symptom}
+
+### Cause or Disease:
+{cause_or_disease}
+
+### Medical Treatment Guidelines:
+{guidelines}
+
+### Recommendation (personalized for this patient):
+"""
+
+        prompt = alpaca_prompt.format(
+            symptom=symptom,
+            cause_or_disease=cause_or_disease,
+            guidelines=guidelines_context
+        )
+
+        # Generate personalized recommendation
+        recommendation = self._generate_recommendation(
+            prompt,
+            max_new_tokens=max_new_tokens
+        )
+
+        return {
+            "recommendation": recommendation,
+            "retrieved_guidelines": [
+                {
+                    "disease": doc.disease,
+                    "treatment": doc.treatment,
+                    "similarity": doc.similarity
+                }
+                for doc in retrieved_docs
+            ]
+        }
+
+
+# -------------- QUICK TEST --------------
+
+if __name__ == "__main__":
+    service = RecommendationRAGService(
+        rag_index_path="../models/recommendation_rag_index.joblib",
+        base_model_name="unsloth/Llama-3.2-1B-Instruct",
+        adapter_path=None,  # Set to your LoRA adapter path
+        device="cpu",
+    )
+
+    symptom = "My lower back has been aching constantly and gets worse when I sit for long periods."
+    cause = "The symptoms indicate lower back pain, likely caused by poor posture or muscle strain."
+
+    result = service.generate_recommendation(
+        symptom=symptom,
+        cause_or_disease=cause,
+        top_k_docs=2,
+    )
+
+    print("=" * 60)
+    print("SYMPTOM:", symptom)
+    print("\nCAUSE:", cause)
+    print("\n=== Retrieved Treatment Guidelines ===")
+    for i, doc in enumerate(result["retrieved_guidelines"], 1):
+        print(f"\n{i}. Disease: {doc['disease']} (similarity: {doc['similarity']:.3f})")
+        print(f"   Treatment: {doc['treatment'][:200]}...")
+
+    print("\n=== Generated Recommendation ===")
+    print(result["recommendation"])
+    print("=" * 60)
