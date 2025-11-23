@@ -132,11 +132,12 @@ class RecommendationRAGService:
 
         response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        # Extract only the recommendation part
+        # Extract only the recommendation part after "### Recommendation:"
         if "### Recommendation:" in response:
             answer = response.split("### Recommendation:")[-1].strip()
         else:
-            answer = response.strip()
+            # Fallback: try to remove the prompt from response
+            answer = response.replace(prompt, "").strip()
 
         return answer
 
@@ -148,6 +149,7 @@ class RecommendationRAGService:
         cause_or_disease: str,
         top_k_docs: int = 3,
         max_new_tokens: int = 100,
+        use_rag_in_prompt: bool = False,  # Set to True after retraining with RAG
     ) -> Dict[str, Any]:
         """
         Generate personalized medication recommendation using RAG.
@@ -157,6 +159,7 @@ class RecommendationRAGService:
             cause_or_disease: Generated cause/disease explanation from Model 2
             top_k_docs: Number of treatment guidelines to retrieve
             max_new_tokens: Maximum tokens to generate
+            use_rag_in_prompt: If True, includes guidelines in prompt (requires retrained model)
             
         Returns:
             Dictionary with recommendation and retrieved documents
@@ -167,14 +170,14 @@ class RecommendationRAGService:
         # Retrieve relevant treatment guidelines
         retrieved_docs = self._retrieve_treatments(retrieval_query, top_k=top_k_docs)
 
-        # Format retrieved guidelines for context
-        guidelines_context = "\n\n".join(
-            f"{i+1}. Disease: {doc.disease}\n   Treatment: {doc.treatment[:500]}..."  # Truncate long treatments
-            for i, doc in enumerate(retrieved_docs)
-        )
-
-        # Build prompt with RAG context
-        alpaca_prompt = """Based on the patient's symptoms, cause/disease, and the medical treatment guidelines below, provide a personalized recommendation to the patient (2-3 sentences max).
+        if use_rag_in_prompt:
+            # NEW: For retrained model that was trained with guidelines in prompt
+            guidelines_context = "\n\n".join(
+                f"{i+1}. Disease: {doc.disease}\n   Treatment: {doc.treatment[:500]}..."
+                for i, doc in enumerate(retrieved_docs)
+            )
+            
+            alpaca_prompt = """Based on the patient's symptoms, cause/disease, and the medical treatment guidelines below, give a short recommendation to the patient (2 sentences max).
 
 ### Symptoms:
 {symptom}
@@ -185,14 +188,40 @@ class RecommendationRAGService:
 ### Medical Treatment Guidelines:
 {guidelines}
 
-### Recommendation (personalized for this patient):
+### Recommendation:
 """
+            
+            prompt = alpaca_prompt.format(
+                symptom=symptom,
+                cause_or_disease=cause_or_disease,
+                guidelines=guidelines_context
+            )
+        else:
+            # CURRENT: For existing model trained without guidelines in prompt
+            # Enhance the cause/disease with guideline information
+            if retrieved_docs:
+                top_guideline = retrieved_docs[0]
+                # Extract key treatment info (first 150 chars)
+                treatment_snippet = top_guideline.treatment.replace('\n', ' ')[:150]
+                enhanced_cause = f"{cause_or_disease} According to medical guidelines for {top_guideline.disease}, {treatment_snippet}..."
+            else:
+                enhanced_cause = cause_or_disease
+            
+            alpaca_prompt = """Based on the patient's symptoms and cause or disease mentioned, give a short recommendation to the patient (2 sentences max).
 
-        prompt = alpaca_prompt.format(
-            symptom=symptom,
-            cause_or_disease=cause_or_disease,
-            guidelines=guidelines_context
-        )
+### Symptoms:
+{symptom}
+
+### Cause or Disease:
+{cause_or_disease}
+
+### Recommendation:
+"""
+            
+            prompt = alpaca_prompt.format(
+                symptom=symptom,
+                cause_or_disease=enhanced_cause
+            )
 
         # Generate personalized recommendation
         recommendation = self._generate_recommendation(
@@ -230,6 +259,7 @@ if __name__ == "__main__":
         symptom=symptom,
         cause_or_disease=cause,
         top_k_docs=2,
+        use_rag_in_prompt=False,  # Set to True after retraining with RAG guidelines
     )
 
     print("=" * 60)
