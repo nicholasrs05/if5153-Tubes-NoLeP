@@ -1,10 +1,9 @@
-# cause_generation_service.py (Qwen, English prompt, stop on period)
-
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 import numpy as np
 import joblib
 import torch
+import time  
 
 from sentence_transformers import SentenceTransformer
 from transformers import (
@@ -15,7 +14,7 @@ from transformers import (
 )
 
 
-RAG_INDEX_PATH = "cause_rag_index.joblib"
+RAG_INDEX_PATH = "../models/cause_rag_index.joblib"
 
 
 @dataclass
@@ -26,7 +25,6 @@ class RetrievedCauseDoc:
 
 
 class StopOnPeriod(StoppingCriteria):
-
     def __init__(
         self,
         tokenizer: AutoTokenizer,
@@ -43,16 +41,12 @@ class StopOnPeriod(StoppingCriteria):
         input_ids: torch.LongTensor,
         scores: torch.FloatTensor,
     ) -> bool:
-        # input_ids shape: (batch_size, seq_len)
-        # we assume batch_size=1
         full_ids = input_ids[0]
 
-        # only look at generated part (exclude prompt tokens)
         gen_ids = full_ids[self.prompt_token_len :]
         if gen_ids.shape[0] < self.min_generated_tokens:
             return False
 
-        # decode only generated tokens
         gen_text = self.tokenizer.decode(
             gen_ids,
             skip_special_tokens=True,
@@ -62,40 +56,39 @@ class StopOnPeriod(StoppingCriteria):
         if not gen_text:
             return False
 
-        # check last non-space character
         last_char = gen_text.rstrip()[-1]
         return last_char == "."
 
 
 class CauseRAGService:
-    """
-    RAG-based cause explanation generator using:
-    - SentenceTransformers for retrieval
-    - Qwen Instruct (causal LM) for generation
-    """
-
     def __init__(
         self,
         rag_index_path: str = RAG_INDEX_PATH,
         generator_model_name: str = "Qwen/Qwen3-4B-Instruct-2507",
-        device: str = "cpu",
+        device: str = "cuda",
+        debug: bool = True,  # <-- NEW
     ):
-        # ----- Load RAG index -----
+        self.debug = debug
+
+        t0 = time.perf_counter()
         index = joblib.load(rag_index_path)
         self.categories = index["categories"]
         self.cause_texts = index["cause_texts"]
         self.cause_embeddings = np.array(index["cause_embeddings"], dtype=np.float32)
+        if self.debug:
+            print(f"[DEBUG] Loaded RAG index in {time.perf_counter() - t0:.3f}s")
 
-        # ----- Load embedder (same as used to build the index) -----
+        t1 = time.perf_counter()
         self.embedder = SentenceTransformer(index["embedding_model_name"])
+        if self.debug:
+            print(f"[DEBUG] Loaded SentenceTransformer in {time.perf_counter() - t1:.3f}s")
 
-        # ----- Load Qwen causal LM -----
+        t2 = time.perf_counter()
         self.tokenizer = AutoTokenizer.from_pretrained(generator_model_name)
         self.gen_model = AutoModelForCausalLM.from_pretrained(
             generator_model_name,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         )
-
         if device == "cuda" and torch.cuda.is_available():
             self.device = torch.device("cuda")
         else:
@@ -103,20 +96,23 @@ class CauseRAGService:
 
         self.gen_model.to(self.device)
         self.gen_model.eval()
+        if self.debug:
+            print(f"[DEBUG] Loaded Qwen model + moved to {self.device} in {time.perf_counter() - t2:.3f}s")
 
-    # ---------------- RETRIEVAL ----------------
 
     def _retrieve_docs(self, query_text: str, top_k: int = 3) -> List[RetrievedCauseDoc]:
+        t0 = time.perf_counter()
         q_emb = self.embedder.encode(
             [query_text],
             convert_to_numpy=True,
             normalize_embeddings=True,
         )[0].astype(np.float32)
+        t_enc = time.perf_counter()
 
         sims = np.dot(self.cause_embeddings, q_emb)
         top_idx = np.argsort(sims)[::-1][:top_k]
 
-        return [
+        docs = [
             RetrievedCauseDoc(
                 category=self.categories[i],
                 cause_text=self.cause_texts[i],
@@ -124,8 +120,14 @@ class CauseRAGService:
             )
             for i in top_idx
         ]
+        t_end = time.perf_counter()
 
-    # ---------------- GENERATION (QWEN) ----------------
+        if self.debug:
+            print(f"[DEBUG] Retrieval encode time: {t_enc - t0:.3f}s")
+            print(f"[DEBUG] Retrieval similarity + select time: {t_end - t_enc:.3f}s")
+
+        return docs
+
 
     def _generate_text(
         self,
@@ -133,21 +135,21 @@ class CauseRAGService:
         max_new_tokens: int = 40,
         min_generated_tokens: int = 5,
     ) -> str:
-        """
-        Generate text using Qwen (causal LM) with custom stopping criteria
-        that stops when the generated text ends with a period '.'.
-        """
+        t0 = time.perf_counter()
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
         ).to(self.device)
 
         prompt_token_len = inputs["input_ids"].shape[1]
+        if self.debug:
+            print(f"[DEBUG] Prompt token length: {prompt_token_len}")
 
         stopping = StoppingCriteriaList(
             [StopOnPeriod(self.tokenizer, prompt_token_len, min_generated_tokens)]
         )
 
+        t1 = time.perf_counter()
         with torch.no_grad():
             output_ids = self.gen_model.generate(
                 **inputs,
@@ -159,22 +161,28 @@ class CauseRAGService:
                 eos_token_id=self.tokenizer.eos_token_id,
                 stopping_criteria=stopping,
             )
+        t2 = time.perf_counter()
 
         full_text = self.tokenizer.decode(
             output_ids[0],
             skip_special_tokens=True,
             clean_up_tokenization_spaces=True,
         )
+        t3 = time.perf_counter()
 
-        # strip prompt if it's echoed
         if full_text.startswith(prompt):
             gen_text = full_text[len(prompt) :].strip()
         else:
             gen_text = full_text.strip()
 
+        if self.debug:
+            print(f"[DEBUG] Tokenization time: {t1 - t0:.3f}s")
+            print(f"[DEBUG] Generation time: {t2 - t1:.3f}s")
+            print(f"[DEBUG] Decode time: {t3 - t2:.3f}s")
+            print(f"[DEBUG] Generated text: {gen_text}")
+
         return gen_text
 
-    # ---------------- PUBLIC API ----------------
 
     def generate_cause_explanation(
         self,
@@ -183,12 +191,8 @@ class CauseRAGService:
         top_k_docs: int = 3,
         max_new_tokens: int = 40,
     ) -> Dict[str, Any]:
-        """
-        Generate an English explanation of possible medical causes
-        for the patient's complaint using RAG + Qwen.
-        """
+        t0 = time.perf_counter()
 
-        # Build retrieval query (English)
         if predicted_category:
             retrieval_query = (
                 f"Complaint: {complaint_text}\n"
@@ -199,12 +203,13 @@ class CauseRAGService:
 
         retrieved_docs = self._retrieve_docs(retrieval_query, top_k=top_k_docs)
 
+        MAX_KB_CHARS_PER_DOC = 500  # atau 600–1000, coba-coba
+
         kb_context = "\n".join(
-            f"{i+1}. [Category: {d.category}] {d.cause_text}"
+            f"{i+1}. [Category: {d.category}] {d.cause_text[:MAX_KB_CHARS_PER_DOC]}"
             for i, d in enumerate(retrieved_docs)
         )
 
-        # -------- ENGLISH PROMPT FOR QWEN --------
         prompt = f"""
 You are a medical assistant. Your task is to explain possible medical causes
 for the patient's symptoms, using the complaint and the retrieved medical knowledge.
@@ -226,11 +231,20 @@ Relevant medical knowledge:
 Now write ONE sentence explaining the possible causes:
 """
 
+        t1 = time.perf_counter()
+        if self.debug:
+            print(f"[DEBUG] Prompt length (chars): {len(prompt)}")
+            print(f"[DEBUG] Time until generation call: {t1 - t0:.3f}s")
+
         cause_text = self._generate_text(
             prompt,
             max_new_tokens=max_new_tokens,
             min_generated_tokens=5,
         )
+
+        t2 = time.perf_counter()
+        if self.debug:
+            print(f"[DEBUG] Total generate_cause_explanation time: {t2 - t0:.3f}s")
 
         return {
             "cause_explanation": cause_text,
@@ -238,13 +252,13 @@ Now write ONE sentence explaining the possible causes:
         }
 
 
-# -------------- QUICK TEST --------------
 
 if __name__ == "__main__":
     service = CauseRAGService(
         rag_index_path=RAG_INDEX_PATH,
         generator_model_name="Qwen/Qwen2.5-1.5B-Instruct",
-        device="cpu",
+        device="cuda",
+        debug=True,
     )
 
     complaint = "My lower back hurts a lot after I lift heavy things at work."
@@ -257,10 +271,5 @@ if __name__ == "__main__":
         max_new_tokens=40,
     )
 
-    print("Complaint:", complaint)
-    print("\n=== Retrieved docs ===")
-    for d in out["retrieved_docs"]:
-        print(f"- ({d['category']}, sim={d['similarity']:.3f}) {d['cause_text']}")
-
-    print("\n=== Generated cause explanation ===")
+    print("\n=== Final cause explanation ===")
     print(out["cause_explanation"])
