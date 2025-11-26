@@ -233,14 +233,14 @@ class RecommendationRAGService:
 # -------------- QUICK TEST --------------
 
 if __name__ == "__main__":
-    # Google Drive folder ID for LoRA adapter (update with your own)
+    # Google Drive folder ID for LoRA adapter
     GDRIVE_FOLDER_ID = "1sYuN_9rF9YRjI0Cn1e-vRJ01V3aB-xyb"
     
     service = RecommendationRAGService(
         rag_index_path="../models/recommendation_rag_index.joblib",
         base_model_name="unsloth/Llama-3.2-1B-Instruct",
         adapter_path="../models/llama-recommendation-fine-tuned",
-        adapter_gdrive_folder_id=GDRIVE_FOLDER_ID,  # Auto-download if not found
+        adapter_gdrive_folder_id=GDRIVE_FOLDER_ID,
         device="cpu",
     )
 
@@ -251,7 +251,7 @@ if __name__ == "__main__":
         symptom=symptom,
         cause_or_disease=cause,
         top_k_docs=2,
-        use_rag_in_prompt=False,  # Set to True after retraining with RAG guidelines
+        use_rag_in_prompt=False,
     )
 
     print("=" * 60)
