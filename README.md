@@ -1,6 +1,6 @@
 # Tugas Besar IF5153 - Pemrosesan Bahasa Alami
 
-## Group 18
+## Group 17
 
 | NIM | Name |
 | --- | ---- |
