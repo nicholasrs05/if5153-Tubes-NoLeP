@@ -7,7 +7,6 @@ from recommendation_generation.recommendation_rag_service import RecommendationR
 def main():
     print("Loading models... please wait.")
 
-    # ---- Load classification model ----
     model_classification_path = "models/roberta_classification"
     model, tokenizer, id2label, device = load_model(model_classification_path)
 
@@ -15,6 +14,7 @@ def main():
         rag_index_path="models/cause_rag_index.joblib",
         generator_model_name="Qwen/Qwen2.5-1.5B-Instruct",
         device="cpu",
+        debug=False,
     )
     
     recommendation_service = RecommendationRAGService(
@@ -26,6 +26,13 @@ def main():
 
     print("Models loaded! You can now start the pipeline.")
     print("Type 'exit' or 'quit' to stop.\n")
+
+    show_knowledge_source = False
+
+    print("Do you want to display retrieved knowledge sources? (y/n): ", end="")
+    choice = input().strip().lower()
+    if choice == 'y':
+        show_knowledge_source = True
 
     while True:
         try:
@@ -39,44 +46,48 @@ def main():
                 print("Empty input, please type a complaint sentence.\n")
                 continue
 
-            # -------------------------------------------------
-            # 1) CLASSIFICATION MODEL
-            # -------------------------------------------------
             print("\n[MODEL 1] Classification")
             predicted_label = classify_single_text(
                 user_input, model, tokenizer, id2label, device
             )
             print(f"Predicted label: {predicted_label}")
 
-            # -------------------------------------------------
-            # 2) CAUSE GENERATION MODEL
-            # -------------------------------------------------
             print("\n[MODEL 2] Cause Generation (RAG + Qwen)")
             cause_result = cause_generation_service.generate_cause_explanation(
                 complaint_text=user_input,
                 predicted_category=predicted_label,
                 top_k_docs=2,
-                max_new_tokens=40,
+                max_new_tokens=80,
             )
 
             cause_explanation = cause_result["cause_explanation"]
             print("Generated cause explanation:")
             print(cause_explanation)
 
-            # -------------------------------------------------
-            # 3) RECOMMENDATION GENERATION MODEL (RAG-BASED)
-            # -------------------------------------------------
+            if show_knowledge_source:
+                print("\nRetrieved cause documents:")
+                for doc in cause_result["retrieved_docs"]:
+                    print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text'][:150]}... (For full text, refer to the RAG knowledge source)")
+
             print("\n[MODEL 3] Recommendation Generation (RAG + Fine-tuned Llama)")
             recommendation_result = recommendation_service.generate_recommendation(
                 symptom=user_input,
                 cause_or_disease=cause_explanation,
                 top_k_docs=2,
                 max_new_tokens=80,
+                use_rag_in_prompt=True,
+                predicted_category=predicted_label,
             )
 
             recommendation = recommendation_result["recommendation"]
             print("Generated recommendation:")
             print(recommendation)
+
+            if show_knowledge_source:
+                print("\nRetrieved treatment guidelines:")
+                for doc in recommendation_result["retrieved_guidelines"]:
+                    print(f"- ({doc['disease']}, sim={doc['similarity']:.3f}) {doc['treatment'][:150]}... (For full text, refer to the RAG knowledge source)")
+
 
         except Exception as e:
             print(f"An error occurred: {e}")

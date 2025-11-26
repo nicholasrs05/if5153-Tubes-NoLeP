@@ -15,13 +15,6 @@ RAG_INDEX_PATH = "../models/recommendation_rag_index.joblib"
 
 
 def download_lora_adapter(adapter_dir):
-    """
-    Download LoRA adapter from Google Drive if not found locally.
-    
-    Args:
-        adapter_dir: Local directory to save the adapter
-        folder_id: Google Drive folder ID containing the adapter files
-    """
     if not os.path.exists(adapter_dir):
         print(f"LoRA adapter not found. Downloading from Google Drive...")
         os.makedirs(adapter_dir, exist_ok=True)
@@ -41,12 +34,6 @@ class RetrievedTreatmentDoc:
 
 
 class RecommendationRAGService:
-    """
-    RAG-based medication recommendation service using:
-    - SentenceTransformers for retrieval from treatment guidelines
-    - Fine-tuned Llama 3.2-1B with LoRA for personalized generation
-    """
-
     def __init__(
         self,
         rag_index_path: str = RAG_INDEX_PATH,
@@ -54,16 +41,6 @@ class RecommendationRAGService:
         adapter_path: str = None,
         device: str = None,
     ):
-        """
-        Initialize recommendation service.
-        
-        Args:
-            rag_index_path: Path to RAG index file
-            base_model_name: HuggingFace base model name
-            adapter_path: Local path to LoRA adapter
-            adapter_gdrive_folder_id: Google Drive folder ID for auto-download
-            device: Device to use ("cpu" or "cuda")
-        """
         # ----- Load RAG index -----
         print("Loading RAG index...")
         index = joblib.load(rag_index_path)
@@ -72,7 +49,7 @@ class RecommendationRAGService:
         self.combined_texts = index["combined_texts"]
         self.treatment_embeddings = np.array(index["treatment_embeddings"], dtype=np.float32)
 
-        # ----- Load embedder (same as used to build the index) -----
+        # ----- Load embedder -----
         print("Loading embedding model...")
         self.embedder = SentenceTransformer(index["embedding_model_name"])
 
@@ -118,9 +95,6 @@ class RecommendationRAGService:
         query_text: str, 
         top_k: int = 3
     ) -> List[RetrievedTreatmentDoc]:
-        """
-        Retrieve most relevant treatment guidelines based on query.
-        """
         q_emb = self.embedder.encode(
             [query_text],
             convert_to_numpy=True,
@@ -149,9 +123,6 @@ class RecommendationRAGService:
         temperature: float = 0.7,
         top_p: float = 0.9,
     ) -> str:
-        """
-        Generate personalized recommendation using fine-tuned Llama model.
-        """
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
         with torch.no_grad():
@@ -184,29 +155,19 @@ class RecommendationRAGService:
         cause_or_disease: str,
         top_k_docs: int = 3,
         max_new_tokens: int = 100,
-        use_rag_in_prompt: bool = False,  # Set to True after retraining with RAG
+        use_rag_in_prompt: bool = False,
+        predicted_category: str = None,
     ) -> Dict[str, Any]:
-        """
-        Generate personalized medication recommendation using RAG.
-        
-        Args:
-            symptom: Patient's complaint/symptoms
-            cause_or_disease: Generated cause/disease explanation from Model 2
-            top_k_docs: Number of treatment guidelines to retrieve
-            max_new_tokens: Maximum tokens to generate
-            use_rag_in_prompt: If True, includes guidelines in prompt (requires retrained model)
-            
-        Returns:
-            Dictionary with recommendation and retrieved documents
-        """
         # Build retrieval query combining symptom and cause
         retrieval_query = f"Symptoms: {symptom}\nCause/Disease: {cause_or_disease}"
 
-        # Retrieve relevant treatment guidelines
-        retrieved_docs = self._retrieve_treatments(retrieval_query, top_k=top_k_docs)
+        retrieved_docs = []
 
-        if use_rag_in_prompt:
-            # NEW: For retrained model that was trained with guidelines in prompt
+        # If use RAG and label is not emotional pain, include guidelines in prompt
+        if use_rag_in_prompt and predicted_category != "Emotional pain":
+            # Retrieve relevant treatment guidelines
+            retrieved_docs = self._retrieve_treatments(retrieval_query, top_k=top_k_docs)
+            
             guidelines_context = "\n\n".join(
                 f"{i+1}. Disease: {doc.disease}\n   Treatment: {doc.treatment[:500]}..."
                 for i, doc in enumerate(retrieved_docs)
@@ -232,15 +193,7 @@ class RecommendationRAGService:
                 guidelines=guidelines_context
             )
         else:
-            # CURRENT: For existing model trained without guidelines in prompt
-            # Enhance the cause/disease with guideline information
-            if retrieved_docs:
-                top_guideline = retrieved_docs[0]
-                # Extract key treatment info (first 150 chars)
-                treatment_snippet = top_guideline.treatment.replace('\n', ' ')[:150]
-                enhanced_cause = f"{cause_or_disease} According to medical guidelines for {top_guideline.disease}, {treatment_snippet}..."
-            else:
-                enhanced_cause = cause_or_disease
+            enhanced_cause = cause_or_disease
             
             alpaca_prompt = """Based on the patient's symptoms and cause or disease mentioned, give a short recommendation to the patient (2 sentences max).
 
@@ -280,14 +233,14 @@ class RecommendationRAGService:
 # -------------- QUICK TEST --------------
 
 if __name__ == "__main__":
-    # Google Drive folder ID for LoRA adapter (update with your own)
+    # Google Drive folder ID for LoRA adapter
     GDRIVE_FOLDER_ID = "1sYuN_9rF9YRjI0Cn1e-vRJ01V3aB-xyb"
     
     service = RecommendationRAGService(
         rag_index_path="../models/recommendation_rag_index.joblib",
         base_model_name="unsloth/Llama-3.2-1B-Instruct",
         adapter_path="../models/llama-recommendation-fine-tuned",
-        adapter_gdrive_folder_id=GDRIVE_FOLDER_ID,  # Auto-download if not found
+        adapter_gdrive_folder_id=GDRIVE_FOLDER_ID,
         device="cpu",
     )
 
@@ -298,7 +251,7 @@ if __name__ == "__main__":
         symptom=symptom,
         cause_or_disease=cause,
         top_k_docs=2,
-        use_rag_in_prompt=False,  # Set to True after retraining with RAG guidelines
+        use_rag_in_prompt=False,
     )
 
     print("=" * 60)

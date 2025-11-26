@@ -15,10 +15,6 @@ def build_recommendation_rag_index(
     index_path: str = RAG_INDEX_PATH,
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
 ):
-    """
-    Build RAG index from treatment guidelines CSV.
-    Combines disease name and treatment text for embedding.
-    """
     # 1. Load knowledge base
     print(f"Loading treatment guidelines from: {kb_path}")
     df = pd.read_csv(kb_path)
@@ -27,8 +23,7 @@ def build_recommendation_rag_index(
     diseases = df["disease"].astype(str).tolist()
     treatments = df["treatment"].astype(str).tolist()
 
-    # 2. Create combined text for better retrieval
-    # Combine disease name with treatment for semantic matching
+    # 2. Combine disease name with treatment
     combined_texts = [
         f"Disease: {disease}\nTreatment: {treatment}"
         for disease, treatment in zip(diseases, treatments)
@@ -45,7 +40,7 @@ def build_recommendation_rag_index(
         batch_size=32,
         show_progress_bar=True,
         convert_to_numpy=True,
-        normalize_embeddings=True,  # important for cosine similarity
+        normalize_embeddings=True,
     )
 
     # 5. Build and save index
@@ -59,8 +54,8 @@ def build_recommendation_rag_index(
 
     os.makedirs(os.path.dirname(index_path), exist_ok=True)
     joblib.dump(index, index_path)
-    print(f"✓ RAG index saved to: {os.path.abspath(index_path)}")
-    print(f"✓ Indexed {len(diseases)} treatment guidelines")
+    print(f"RAG index saved to: {os.path.abspath(index_path)}")
+    print(f"Indexed {len(diseases)} treatment guidelines")
 
 
 if __name__ == "__main__":
