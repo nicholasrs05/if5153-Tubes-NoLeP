@@ -45,9 +45,6 @@ def main():
             )
             print(f"Predicted label: {predicted_label}")
 
-            # -------------------------------------------------
-            # 2) CAUSE GENERATION MODEL (RAG-BASED)
-            # -------------------------------------------------
             print("\n[MODEL 2] Cause Generation (RAG + Qwen)")
             cause_result = cause_generation_service.generate_cause_explanation(
                 complaint_text=user_input,
@@ -64,9 +61,6 @@ def main():
             # for doc in cause_result["retrieved_docs"]:
             #     print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text']}")
 
-            # -------------------------------------------------
-            # 3) RECOMMENDATION GENERATION MODEL (RAG-BASED)
-            # -------------------------------------------------
             print("\n[MODEL 3] Recommendation Generation (RAG + Fine-tuned Llama)")
             recommendation_result = recommendation_service.generate_recommendation(
                 symptom=user_input,
