@@ -67,7 +67,7 @@ def main():
             if show_knowledge_source:
                 print("\nRetrieved cause documents:")
                 for doc in cause_result["retrieved_docs"]:
-                    print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text']}")
+                    print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text'][:150]}... (For full text, refer to the RAG knowledge source)")
 
             print("\n[MODEL 3] Recommendation Generation (RAG + Fine-tuned Llama)")
             recommendation_result = recommendation_service.generate_recommendation(
@@ -86,7 +86,7 @@ def main():
             if show_knowledge_source:
                 print("\nRetrieved treatment guidelines:")
                 for doc in recommendation_result["retrieved_guidelines"]:
-                    print(f"- ({doc['disease']}, sim={doc['similarity']:.3f}) {doc['treatment'][:50]}... (For full text, refer to the RAG knowledge source)")
+                    print(f"- ({doc['disease']}, sim={doc['similarity']:.3f}) {doc['treatment'][:150]}... (For full text, refer to the RAG knowledge source)")
 
 
         except Exception as e:
