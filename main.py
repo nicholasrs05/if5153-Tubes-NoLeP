@@ -27,6 +27,13 @@ def main():
     print("Models loaded! You can now start the pipeline.")
     print("Type 'exit' or 'quit' to stop.\n")
 
+    show_knowledge_source = False
+
+    print("Do you want to display retrieved knowledge sources? (y/n): ", end="")
+    choice = input().strip().lower()
+    if choice == 'y':
+        show_knowledge_source = True
+
     while True:
         try:
             user_input = input("\n\nEnter patient complaint: ").strip()
@@ -57,9 +64,10 @@ def main():
             print("Generated cause explanation:")
             print(cause_explanation)
 
-            # print("\nRetrieved cause documents:")
-            # for doc in cause_result["retrieved_docs"]:
-            #     print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text']}")
+            if show_knowledge_source:
+                print("\nRetrieved cause documents:")
+                for doc in cause_result["retrieved_docs"]:
+                    print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text']}")
 
             print("\n[MODEL 3] Recommendation Generation (RAG + Fine-tuned Llama)")
             recommendation_result = recommendation_service.generate_recommendation(
@@ -75,9 +83,11 @@ def main():
             print("Generated recommendation:")
             print(recommendation)
 
-            # print("\nRetrieved treatment guidelines:")
-            # for doc in recommendation_result["retrieved_guidelines"]:
-            #     print(f"- ({doc['disease']}, sim={doc['similarity']:.3f}) {doc['treatment'][:150]}...")
+            if show_knowledge_source:
+                print("\nRetrieved treatment guidelines:")
+                for doc in recommendation_result["retrieved_guidelines"]:
+                    print(f"- ({doc['disease']}, sim={doc['similarity']:.3f}) {doc['treatment'][:50]}... (For full text, refer to the RAG knowledge source)")
+
 
         except Exception as e:
             print(f"An error occurred: {e}")
