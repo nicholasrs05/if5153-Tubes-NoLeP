@@ -3,6 +3,7 @@ import json
 import os
 from datasets import Dataset
 import evaluate
+from sklearn.metrics import confusion_matrix
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from transformers import (
@@ -18,11 +19,28 @@ import numpy as np
 def compute_metrics(pred):
     metric_acc = evaluate.load("accuracy")
     metric_f1 = evaluate.load("f1")
+    metric_precision = evaluate.load("precision")
+    metric_recall = evaluate.load("recall")
+
     logits, labels = pred
     preds = np.argmax(logits, axis=-1)
+
     acc = metric_acc.compute(predictions=preds, references=labels)["accuracy"]
     f1 = metric_f1.compute(predictions=preds, references=labels, average="macro")["f1"]
-    return {"accuracy": acc, "f1_macro": f1}
+    precision = metric_precision.compute(predictions=preds, references=labels, average="macro")["precision"]
+    recall = metric_recall.compute(predictions=preds, references=labels, average="macro")["recall"]
+    
+    cm = confusion_matrix(labels, preds)
+    
+    cm_list = cm.tolist()
+    
+    return {
+        "accuracy": acc,
+        "f1_macro": f1,
+        "precision_macro": precision,
+        "recall_macro": recall,
+        "confusion_matrix": cm_list
+    }
 
 
 def main(args):
