@@ -7,7 +7,6 @@ from recommendation_generation.recommendation_rag_service import RecommendationR
 def main():
     print("Loading models... please wait.")
 
-    # ---- Load classification model ----
     model_classification_path = "models/roberta_classification"
     model, tokenizer, id2label, device = load_model(model_classification_path)
 
@@ -15,6 +14,7 @@ def main():
         rag_index_path="models/cause_rag_index.joblib",
         generator_model_name="Qwen/Qwen2.5-1.5B-Instruct",
         device="cpu",
+        debug=False,
     )
     
     recommendation_service = RecommendationRAGService(
@@ -39,9 +39,6 @@ def main():
                 print("Empty input, please type a complaint sentence.\n")
                 continue
 
-            # -------------------------------------------------
-            # 1) CLASSIFICATION MODEL
-            # -------------------------------------------------
             print("\n[MODEL 1] Classification")
             predicted_label = classify_single_text(
                 user_input, model, tokenizer, id2label, device
