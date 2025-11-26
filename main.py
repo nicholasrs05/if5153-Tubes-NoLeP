@@ -49,19 +49,23 @@ def main():
             print(f"Predicted label: {predicted_label}")
 
             # -------------------------------------------------
-            # 2) CAUSE GENERATION MODEL
+            # 2) CAUSE GENERATION MODEL (RAG-BASED)
             # -------------------------------------------------
             print("\n[MODEL 2] Cause Generation (RAG + Qwen)")
             cause_result = cause_generation_service.generate_cause_explanation(
                 complaint_text=user_input,
                 predicted_category=predicted_label,
                 top_k_docs=2,
-                max_new_tokens=40,
+                max_new_tokens=80,
             )
 
             cause_explanation = cause_result["cause_explanation"]
             print("Generated cause explanation:")
             print(cause_explanation)
+
+            # print("\nRetrieved cause documents:")
+            # for doc in cause_result["retrieved_docs"]:
+            #     print(f"- ({doc['category']}, sim={doc['similarity']:.3f}) {doc['cause_text']}")
 
             # -------------------------------------------------
             # 3) RECOMMENDATION GENERATION MODEL (RAG-BASED)
@@ -72,11 +76,17 @@ def main():
                 cause_or_disease=cause_explanation,
                 top_k_docs=2,
                 max_new_tokens=80,
+                use_rag_in_prompt=True,
+                predicted_category=predicted_label,
             )
 
             recommendation = recommendation_result["recommendation"]
             print("Generated recommendation:")
             print(recommendation)
+
+            # print("\nRetrieved treatment guidelines:")
+            # for doc in recommendation_result["retrieved_guidelines"]:
+            #     print(f"- ({doc['disease']}, sim={doc['similarity']:.3f}) {doc['treatment'][:150]}...")
 
         except Exception as e:
             print(f"An error occurred: {e}")

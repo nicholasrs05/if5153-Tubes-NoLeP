@@ -16,18 +16,6 @@ service = RecommendationRAGService(
 
 # Inference function with RAG
 def generate_recommendation(symptom, cause_or_disease, top_k_guidelines=3, use_rag_in_prompt=False):
-    """
-    Generate medication recommendation using RAG.
-    
-    Args:
-        symptom: Patient's complaint/symptoms
-        cause_or_disease: Generated cause/disease from Model 2
-        top_k_guidelines: Number of treatment guidelines to retrieve
-        use_rag_in_prompt: Set to True after retraining model with RAG guidelines
-        
-    Returns:
-        Dictionary with recommendation and retrieved sources
-    """
     result = service.generate_recommendation(
         symptom=symptom,
         cause_or_disease=cause_or_disease,

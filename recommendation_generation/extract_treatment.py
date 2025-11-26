@@ -12,7 +12,6 @@ MANAGEMENT_END = re.compile(r'\b(FOLLOW[- ]?UP|REFERRAL|REFER)\b', re.IGNORECASE
 
 
 def extract_pdf_text(pdf_path):
-    """Extract text from the PDF page-by-page."""
     print("> Extracting raw text from PDF ...")
     pages = []
     with pdfplumber.open(pdf_path) as pdf:
@@ -22,7 +21,6 @@ def extract_pdf_text(pdf_path):
 
 
 def split_into_disease_sections(text):
-    """Split the PDF text based on full-caps disease names."""
     print("> Splitting text into disease sections ...")
     lines = text.split("\n")
 
@@ -51,7 +49,6 @@ def split_into_disease_sections(text):
 
 
 def extract_treatment_text(section_text):
-    """Extract only the MANAGEMENT/TREATMENT part of each disease section."""
     # Find start
     start_match = MANAGEMENT_START.search(section_text)
     if not start_match:
@@ -69,7 +66,6 @@ def extract_treatment_text(section_text):
 
 
 def build_csv(sections):
-    """Extract treatment text for each disease and write CSV."""
     print("> Extracting treatment parts and writing CSV ...")
 
     rows = []

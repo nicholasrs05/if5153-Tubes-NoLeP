@@ -44,7 +44,6 @@ class StopOnPeriod(StoppingCriteria):
         scores: torch.FloatTensor,
     ) -> bool:
         # input_ids shape: (batch_size, seq_len)
-        # we assume batch_size=1
         full_ids = input_ids[0]
 
         # only look at generated part (exclude prompt tokens)
@@ -68,12 +67,6 @@ class StopOnPeriod(StoppingCriteria):
 
 
 class CauseRAGService:
-    """
-    RAG-based cause explanation generator using:
-    - SentenceTransformers for retrieval
-    - Qwen Instruct (causal LM) for generation
-    """
-
     def __init__(
         self,
         rag_index_path: str = RAG_INDEX_PATH,
@@ -86,7 +79,7 @@ class CauseRAGService:
         self.cause_texts = index["cause_texts"]
         self.cause_embeddings = np.array(index["cause_embeddings"], dtype=np.float32)
 
-        # ----- Load embedder (same as used to build the index) -----
+        # ----- Load embedder -----
         self.embedder = SentenceTransformer(index["embedding_model_name"])
 
         # ----- Load Qwen causal LM -----
@@ -130,13 +123,9 @@ class CauseRAGService:
     def _generate_text(
         self,
         prompt: str,
-        max_new_tokens: int = 40,
+        max_new_tokens: int = 80,
         min_generated_tokens: int = 5,
     ) -> str:
-        """
-        Generate text using Qwen (causal LM) with custom stopping criteria
-        that stops when the generated text ends with a period '.'.
-        """
         inputs = self.tokenizer(
             prompt,
             return_tensors="pt",
@@ -166,7 +155,7 @@ class CauseRAGService:
             clean_up_tokenization_spaces=True,
         )
 
-        # strip prompt if it's echoed
+        # strip prompt
         if full_text.startswith(prompt):
             gen_text = full_text[len(prompt) :].strip()
         else:
@@ -181,13 +170,8 @@ class CauseRAGService:
         complaint_text: str,
         predicted_category: Optional[str] = None,
         top_k_docs: int = 3,
-        max_new_tokens: int = 40,
+        max_new_tokens: int = 80,
     ) -> Dict[str, Any]:
-        """
-        Generate an English explanation of possible medical causes
-        for the patient's complaint using RAG + Qwen.
-        """
-
         # Build retrieval query (English)
         if predicted_category:
             retrieval_query = (
